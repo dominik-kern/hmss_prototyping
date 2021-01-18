@@ -23,7 +23,7 @@ Width = 1;      # 0...xMAX
 Nx=1        # mesh divisions x-direction
 Ny=15       # mesh divisions y-direction
 dt=7.57*10**6   # time step (see HM-test-case/parameters.py)
-Nt=10   # number of time steps
+Nt=3   # number of time steps
 Nci=3   # number of coupling iterations, fixed number is uncool, TODO convergence check
 # physical parameters
 rho = 2400.0 # bulk density
@@ -42,7 +42,7 @@ acceleration_vector = fe.Constant((0, 0))   # causing body forces
 ZeroVector = fe.Constant((0,0))
 ZeroScalar = fe.Constant((0))	
 # dependent parameters
-E = K_S/(3*(1-2*nu));    # Young's modulus (bulk, drained)
+E = K_S*3*(1-2*nu);    # Young's modulus (bulk, drained)
 Lame1 = E*nu/(1+nu)/(1-2*nu)  
 Lame2 = E/2/(1+nu) 
 M = 1/( (alpha_B-phi)/K_S+phi*beta_p )# 1/M M...Biot modulus
@@ -62,6 +62,7 @@ def sigma_eff(u):
 mesh = fe.RectangleMesh(fe.Point(0, 0), fe.Point(Width, Length), Nx, Ny)
 VH = fe.FunctionSpace(mesh, 'P', 1)
 VM = fe.VectorFunctionSpace(mesh, 'P', 2)
+Vsig = fe.TensorFunctionSpace(mesh, "DG", 2)
 
 # IC undeformed, at rest, constant pressure everywhere
 p_0 = fe.Constant(p_ref)
@@ -69,7 +70,7 @@ p_n = fe.interpolate(p_0, VH)
 u_0 = ZeroVector
 u_n = fe.interpolate(u_0, VM)
 sv_0 = fe.Constant(-p_ref)
-sv = fe.interpolate(sv_0, VH)   # hydrostatic total stress
+sv = fe.interpolate(sv_0, VH)
 sv_n = fe.interpolate(sv_0, VH) # hydrostatic total stress
 
 
@@ -118,15 +119,21 @@ LM = fe.dot(vM, bM)*fe.dx # body force
 
 # Time-stepping
 p = fe.Function(VH, name="pressure")    # function solved for and written to file
-vtkfileH = fe.File('pressure.pvd')
+#sv = fe.Function(VH, name="hydrostatic_stress")    # function solved for and written to file
 u = fe.Function(VM, name="displacement") # function to solve for and written to file
-vtkfileM = fe.File('displacement.pvd')
+s_eff = fe.Function(Vsig, name="effective_stress")
+vtkfile_p = fe.File('pressure.pvd')
+vtkfile_u = fe.File('displacement.pvd')
+vtkfile_s = fe.File('stress.pvd')
+#vtkfile_sv = fe.File('hydrostatic_stress.pvd')
 
 t = 0.0
 p.assign(p_n)
-vtkfileH << (p, t)
+vtkfile_p << (p, t)
 u.assign(u_n)
-vtkfileM << (u, t)
+vtkfile_u << (u, t)
+#sv = fe.assign(sv_n)   # hydrostatic total stress
+# TODO sigma and sv
 for n in range(Nt):
     t += dt
     print(n+1,".step   t=",t)
@@ -137,6 +144,7 @@ for n in range(Nt):
         p_n.assign(p)
         
         fe.solve(aM == LM, u, bcM)
+        s_eff.assign(fe.project(sigma_eff(u), Vsig))
         sigma_v=fe.project( (1.0/3.0)*fe.tr(sigma_eff(u)) - alpha_B*p, VH)
         sv.assign(sigma_v)
         delta_sv=max_norm_delta(sv_n, sv)
@@ -144,8 +152,10 @@ for n in range(Nt):
         print(delta_p, delta_sv)
         
     sv_n.assign(sigma_v)
-    vtkfileH << (p,t)
-    vtkfileM << (u,t)
+    vtkfile_p << (p,t)
+    vtkfile_u << (u,t)
+    #vtkfile_sv << (sv,t)
+    vtkfile_s << (s_eff,t)
 
         
         
