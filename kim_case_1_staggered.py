@@ -1,6 +1,5 @@
 # TODO 
-#    monitor convergence
-#    verification of case 1 and 2 [Kim09] (then involve Tengfei)
+#    verification of case 1 and 2 [Kim09] 
 #    roller BC leftright
 #    quadliteral mesh
 #    monolithic formulation
