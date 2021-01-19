@@ -1,10 +1,10 @@
 # TODO 
-#    verification  vs analytical solution 
+#    verification  vs analytical and monolithic solution 
 #    quadliteral mesh
 #    monolithic formulation
 """
-2D Minimal model (1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
-spatial FE discretization for both H and M
+2D Minimal model (of 1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
+spatial FE discretization for both H and M (Taylor Hood)
 temporal Euler-backward discretization
 incompressible fluid, incompressible solid (but linear elastic bulk)
 """
@@ -13,13 +13,18 @@ import fenics as fe
 import numpy as np
 
 fe.set_log_level(30)  # control info/warning/error messages
+vtkfile_p = fe.File('fluidpressure.pvd')
+vtkfile_u = fe.File('displacement.pvd')
+vtkfile_s_eff = fe.File('effective_stress.pvd')
+vtkfile_sv = fe.File('hydrostatic_totalstress.pvd')
 
 # discretization
-Nx=1        # mesh divisions x-direction
-Ny=1       # mesh divisions y-direction
+Nx=2        # mesh divisions x-direction
+Ny=2       # mesh divisions y-direction
 dt=1.0
 Nt=5   # number of time steps
-Nci=30   # number of coupling iterations, fixed number is uncool, TODO convergence check
+Nci_max=100   # maximal number of coupling iterations
+RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
 # physical parameters
 p_ref = 1.0    # reference pressure
 E = 10.0  # Young's modulus (bulk, drained)
@@ -81,7 +86,7 @@ bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
 
 def leftright(x, on_boundary):    
     return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], 1.0, tol))
-bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side
+bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 bcM = [bcMfixed, bcMroller]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
@@ -109,20 +114,14 @@ vM = fe.TestFunction(VM)
 aM = fe.inner(sigma_eff(vM), epsilon(uM))*fe.dx
 
 LM = p_*fe.div(vM)*fe.dx + fe.dot(vM, traction_topM)*ds(1)
-
 # no body forces
 
 # Time-stepping
-vtkfile_p = fe.File('fluidpressure.pvd')
-vtkfile_u = fe.File('displacement.pvd')
-vtkfile_s_eff = fe.File('effective_stress.pvd')
-vtkfile_sv = fe.File('hydrostatic_totalstress.pvd')
-
 t = 0.0
 p.assign(p_n)
 u.assign(u_n)
 sv.assign(sv_n)   # hydrostatic total stress
-s_eff.assign(fe.project(sigma_eff(u), Vsig))
+s_eff.assign(fe.project(sigma_eff(u), Vsig))    # effective stress
 vtkfile_p << (p, t)
 vtkfile_u << (u, t)
 vtkfile_sv << (sv,t)
@@ -130,22 +129,29 @@ vtkfile_s_eff << (s_eff,t)
 for n in range(Nt):
     t += dt
     print(n+1,".step   t=",t)
-    for nn in range(Nci):
+    for nn in range(Nci_max):
         
         fe.solve(aH == LH, p, bcH)
         delta_p=max_norm_delta(p_, p)
-        p_.assign(p)
+        p_.assign(p)    # shift forward coupling iteration
         
         fe.solve(aM == LM, u, bcM)
-        s_eff.assign(fe.project(sigma_eff(u), Vsig))
-        sv.assign( fe.project( (1.0/3.0)*fe.tr(s_eff) - p, VH) )
+        s_eff.assign(fe.project(sigma_eff(u), Vsig))    # effective stress
+        sv.assign( fe.project( (1.0/3.0)*fe.tr(s_eff) - p, VH) )    # hydrostatic total stress
         delta_sv=max_norm_delta(sv_, sv)
-        sv_.assign(sv)
+        sv_.assign(sv)   # shift forward coupling iteration
         
-        print(delta_p, delta_sv)
+        print(nn+1,'. ', delta_p, delta_sv)
         
-    sv_n.assign(sv)
-    p_n.assign(p)
+        conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_sv/p_ref)  # take both to exclude random hit of one variable at initial state
+        if conv_criterium < RelTol_ci:
+            break
+        
+    if nn+1==Nci_max:
+        print("Solution not converged to RelTol=", RelTol_ci)
+    
+    sv_n.assign(sv)     # shift forward time step
+    p_n.assign(p)       # shift forward time step
     print()
     vtkfile_p << (p,t)
     vtkfile_u << (u,t)
