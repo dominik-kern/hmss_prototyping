@@ -1,6 +1,5 @@
 # TODO 
-#    verification  
-#    roller BC leftright
+#    verification  vs analytical solution 
 #    quadliteral mesh
 #    monolithic formulation
 """
@@ -16,11 +15,11 @@ import numpy as np
 fe.set_log_level(30)  # control info/warning/error messages
 
 # discretization
-Nx=2        # mesh divisions x-direction
-Ny=2       # mesh divisions y-direction
-dt=0.01
-Nt=100   # number of time steps
-Nci=10   # number of coupling iterations, fixed number is uncool, TODO convergence check
+Nx=1        # mesh divisions x-direction
+Ny=1       # mesh divisions y-direction
+dt=1.0
+Nt=5   # number of time steps
+Nci=30   # number of coupling iterations, fixed number is uncool, TODO convergence check
 # physical parameters
 p_ref = 1.0    # reference pressure
 E = 10.0  # Young's modulus (bulk, drained)
@@ -35,13 +34,14 @@ ZeroScalar = fe.Constant((0))
 K=E/(3.0*(1-2*nu))
 Lame1 = E*nu/(1+nu)/(1-2*nu)  
 Lame2 = E/2/(1+nu) 
+k_mu=k/mu
 
 def max_norm_delta(f1, f2):
     vertex_values_f1 = f1.compute_vertex_values(mesh)
     vertex_values_f2 = f2.compute_vertex_values(mesh)
     return np.max( np.abs(vertex_values_f1 - vertex_values_f2) )
 
-# Define strain and stress
+# Define strain and stress (2D plain strain)
 def epsilon(u):
     return fe.sym(fe.grad(u))
 def sigma_eff(u):
@@ -53,15 +53,21 @@ VH = fe.FunctionSpace(mesh, 'P', 1)
 VM = fe.VectorFunctionSpace(mesh, 'P', 2)
 Vsig = fe.TensorFunctionSpace(mesh, "P", 2)
 
+p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
+u = fe.Function(VM, name="displacement") # function to solve for and written to file
+s_eff = fe.Function(Vsig, name="effective_stress")
+sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
+sv0 = fe.Function(VH, name="initial hydrostatic_totalstress")    # function solved for and written to file
+
 # IC undeformed, at rest, constant pressure everywhere
 p_0 = fe.Constant(p_ref)
 p_n = fe.interpolate(p_0, VH)   # fluid pressure at t=t_n
 p_ = fe.interpolate(p_0, VH)   # fluid pressure at t=t_(n+1) at coupling iterations
-u_0 = ZeroVector
-u_n = fe.interpolate(u_0, VM)
-sv_0 = fe.Constant(ZeroScalar)  
-sv_n = fe.interpolate(sv_0, VH) # hydrostatic total stress at t_n TODO compute from u0
-sv_ = fe.interpolate(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
+u_0 =fe.Expression( ('0','0'), degree=2)    # undeformed
+u_n = fe.interpolate(u_0, VM)   # displacement at t=t_n
+sv0.assign(fe.project(fe.div(u_n), VH))     # derive from initial displacement
+sv_n = fe.interpolate(sv0, VH) # hydrostatic total stress at t_n 
+sv_ = fe.interpolate(sv0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
 
 # DirichletBC, assign geometry via functions
 tol = 1E-14
@@ -71,7 +77,12 @@ bcH = fe.DirichletBC(VH, p_ref, top)  # drainage on top
 
 def bottom(x, on_boundary):    
     return on_boundary and fe.near(x[1], 0.0, tol)   
-bcM = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
+bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
+
+def leftright(x, on_boundary):    
+    return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], 1.0, tol))
+bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side
+bcM = [bcMfixed, bcMroller]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
 boundaries = fe.MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
@@ -85,7 +96,7 @@ traction_topM = fe.Constant((0, overburden))
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*pH/K + (k/mu)*fe.dot(fe.grad(vH), fe.grad(pH))*dt )*fe.dx
+aH = ( vH*pH/K + k_mu*fe.dot(fe.grad(vH), fe.grad(pH))*dt )*fe.dx
 
 LH = (vH*(p_n+sv_n-sv_)/K)*fe.dx 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
@@ -102,11 +113,6 @@ LM = p_*fe.div(vM)*fe.dx + fe.dot(vM, traction_topM)*ds(1)
 # no body forces
 
 # Time-stepping
-p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
-u = fe.Function(VM, name="displacement") # function to solve for and written to file
-s_eff = fe.Function(Vsig, name="effective_stress")
-sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
-
 vtkfile_p = fe.File('fluidpressure.pvd')
 vtkfile_u = fe.File('displacement.pvd')
 vtkfile_s_eff = fe.File('effective_stress.pvd')
@@ -132,7 +138,7 @@ for n in range(Nt):
         
         fe.solve(aM == LM, u, bcM)
         s_eff.assign(fe.project(sigma_eff(u), Vsig))
-        sv=fe.project( (1.0/3.0)*fe.tr(s_eff) - p, VH)
+        sv.assign( fe.project( (1.0/3.0)*fe.tr(s_eff) - p, VH) )
         delta_sv=max_norm_delta(sv_, sv)
         sv_.assign(sv)
         
