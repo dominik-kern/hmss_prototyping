@@ -11,6 +11,7 @@ incompressible fluid, incompressible solid (but linear elastic bulk)
 from __future__ import print_function
 import fenics as fe
 import numpy as np
+import matplotlib.pyplot as plt
 
 fe.set_log_level(30)  # control info/warning/error messages
 vtkfile_p = fe.File('fluidpressure.pvd')
@@ -19,11 +20,11 @@ vtkfile_s_eff = fe.File('effective_stress.pvd')
 vtkfile_sv = fe.File('hydrostatic_totalstress.pvd')
 
 # discretization
-Nx=2        # mesh divisions x-direction
-Ny=2       # mesh divisions y-direction
+Nx=20        # mesh divisions x-direction
+Ny=20       # mesh divisions y-direction
 dt=1.0
 Nt=5   # number of time steps
-Nci_max=100   # maximal number of coupling iterations
+Nci_max=30   # maximal number of coupling iterations
 RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
 # physical parameters
 p_ref = 1.0    # reference pressure
@@ -55,8 +56,8 @@ def sigma_eff(u):
 ## Create mesh (simplex elements in 2D=triangles) and define function spaces
 mesh = fe.UnitSquareMesh(Nx, Ny)
 VH = fe.FunctionSpace(mesh, 'P', 1)
-VM = fe.VectorFunctionSpace(mesh, 'P', 2)
-Vsig = fe.TensorFunctionSpace(mesh, "P", 2)
+VM = fe.VectorFunctionSpace(mesh, 'P', 1)   # TODO tests
+Vsig = fe.TensorFunctionSpace(mesh, "P", 1)     # TODO tests
 
 p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
 u = fe.Function(VM, name="displacement") # function to solve for and written to file
@@ -126,10 +127,14 @@ vtkfile_p << (p, t)
 vtkfile_u << (u, t)
 vtkfile_sv << (sv,t)
 vtkfile_s_eff << (s_eff,t)
-for n in range(Nt):
+
+y_line=np.linspace(tol, 1-tol, 101)
+points=[(0.5, y_) for y_ in y_line]
+conv_monitor=np.zeros((Nt, Nci_max))
+for n in range(Nt):     # time steps
     t += dt
     print(n+1,".step   t=",t)
-    for nn in range(Nci_max):
+    for nn in range(Nci_max):   # couplint iterations
         
         fe.solve(aH == LH, p, bcH)
         delta_p=max_norm_delta(p_, p)
@@ -144,12 +149,15 @@ for n in range(Nt):
         print(nn+1,'. ', delta_p, delta_sv)
         
         conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_sv/p_ref)  # take both to exclude random hit of one variable at initial state
+        conv_monitor[n,nn]=conv_criterium
         if conv_criterium < RelTol_ci:
             break
         
     if nn+1==Nci_max:
         print("Solution not converged to RelTol=", RelTol_ci)
-    
+    p_line = np.array([ p(point) for point in points])
+    plt.plot(y_line, p_line)    
+    #plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ])
     sv_n.assign(sv)     # shift forward time step
     p_n.assign(p)       # shift forward time step
     print()
@@ -157,4 +165,6 @@ for n in range(Nt):
     vtkfile_u << (u,t)
     vtkfile_sv << (sv,t)
     vtkfile_s_eff << (s_eff,t)
+plt.show()
+
 
