@@ -26,27 +26,28 @@ def dim_sol(x, t, N, L, c, topload):
     X=x/L
     T=t/tau
     p=nondim_sol(X, T, N)/topload
-    return p
+    return np.flip(p)   # flip left and right
 
+def terzaghi_example():
+    N=50
+    L=1
+    E=10
+    k=0.1
+    mu=1
+    topload=1
 
-N=50
+    c=E*k/mu
+    x=np.linspace(0.0, L, 10)
+    t=np.linspace(1e-4, 0.5, 5)
 
-L=2
-E=5
-k=0.1
-mu=0.3
-topload=4.0
-
-c=E*k/mu
-
-x=np.linspace(0.0, L, 100)
-t=np.linspace(1e-4, 0.5, 10)
-
-for nt in range(len(t)):
-    p=dim_sol(x, t[nt], N, L, c, topload)
-    plt.plot(x, p)
+    for nt in range(len(t)):
+        p=dim_sol(x, t[nt], N, L, c, topload)
+        plt.plot(x, p)
+        
+    plt.title('Fourier representation (N='+str(N)+')')
+    plt.show()
     
-plt.show()
+#terzaghi_example()
 
 #outfile = "test.npy"
 #x = np.arange(10)

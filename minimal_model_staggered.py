@@ -12,19 +12,23 @@ from __future__ import print_function
 import fenics as fe
 import numpy as np
 import matplotlib.pyplot as plt
+import terzaghi_analytical_solution # TODO class
 
 fe.set_log_level(30)  # control info/warning/error messages
 vtkfile_p = fe.File('fluidpressure.pvd')
 vtkfile_u = fe.File('displacement.pvd')
 vtkfile_s_eff = fe.File('effective_stress.pvd')
 vtkfile_sv = fe.File('hydrostatic_totalstress.pvd')
+vtkfile_s_total = fe.File('totalstress.pvd')
 
 # discretization
-Nx=20        # mesh divisions x-direction
-Ny=20       # mesh divisions y-direction
-dt=1.0
-Nt=5   # number of time steps
-Nci_max=30   # maximal number of coupling iterations
+Nx=10        # mesh divisions x-direction
+Ny=10       # mesh divisions y-direction
+dt=0.01 # initial time step
+dt_prog=1.15 # time step progression
+Nt=20   # number of time steps
+Nci_max=100   # maximal number of coupling iterations
+N_Fourier=50 # representation of analytical solution as Fourier series for comparison
 RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
 # physical parameters
 p_ref = 1.0    # reference pressure
@@ -33,14 +37,18 @@ nu = 0.0;     # Poisson ratio (bulk)
 k = 0.1   # permeability
 mu = 1.0    # viscosity
 
-overburden = -2.0*p_ref    # load on top (y-direction)
+overburden = -p_ref    # load on top (y-direction)
 ZeroVector = fe.Constant((0,0))
 ZeroScalar = fe.Constant((0))	
 # dependent parameters
+Length = 1 # unit square!
+Width = 1 # unit square!
 K=E/(3.0*(1-2*nu))
-Lame1 = E*nu/(1+nu)/(1-2*nu)  
-Lame2 = E/2/(1+nu) 
-k_mu=k/mu
+Lame1 = E*nu/((1+nu)*(1-2*nu))
+Lame2 = E/(2*(1+nu)) 
+k_mu = k/mu
+cc = E*k_mu # consolidation coefficient
+dT=fe.Constant(dt) #  make time step mutable
 
 def max_norm_delta(f1, f2):
     vertex_values_f1 = f1.compute_vertex_values(mesh)
@@ -55,18 +63,21 @@ def sigma_eff(u):
 
 ## Create mesh (simplex elements in 2D=triangles) and define function spaces
 mesh = fe.UnitSquareMesh(Nx, Ny)
+#mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
+
 VH = fe.FunctionSpace(mesh, 'P', 1)
-VM = fe.VectorFunctionSpace(mesh, 'P', 1)   # TODO tests
+VM = fe.VectorFunctionSpace(mesh, 'P', 2)   # TODO tests
 Vsig = fe.TensorFunctionSpace(mesh, "P", 1)     # TODO tests
 
 p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
 u = fe.Function(VM, name="displacement") # function to solve for and written to file
 s_eff = fe.Function(Vsig, name="effective_stress")
+s_total = fe.Function(Vsig, name="total_stress")
 sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
 sv0 = fe.Function(VH, name="initial hydrostatic_totalstress")    # function solved for and written to file
 
 # IC undeformed, at rest, constant pressure everywhere
-p_0 = fe.Constant(p_ref)
+p_0 = fe.Constant(0*p_ref)
 p_n = fe.interpolate(p_0, VH)   # fluid pressure at t=t_n
 p_ = fe.interpolate(p_0, VH)   # fluid pressure at t=t_(n+1) at coupling iterations
 u_0 =fe.Expression( ('0','0'), degree=2)    # undeformed
@@ -78,23 +89,23 @@ sv_ = fe.interpolate(sv0, VH) # same as sv_n at t_(n+1) at coupling iterations (
 # DirichletBC, assign geometry via functions
 tol = 1E-14
 def top(x, on_boundary):    
-    return on_boundary and fe.near(x[1], 1.0, tol) 
-bcH = fe.DirichletBC(VH, p_ref, top)  # drainage on top 
+    return on_boundary and fe.near(x[1], Length, tol) 
+bcH = fe.DirichletBC(VH, 0*p_ref, top)  # drainage on top 
 
 def bottom(x, on_boundary):    
     return on_boundary and fe.near(x[1], 0.0, tol)   
 bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
 
 def leftright(x, on_boundary):    
-    return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], 1.0, tol))
+    return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
 bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 bcM = [bcMfixed, bcMroller]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
 boundaries = fe.MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 boundaries.set_all(0)
-topSD = fe.AutoSubDomain(lambda x: fe.near(x[1], 1, tol))
-topSD.mark(boundaries, 1)   # access via ds(1)
+topSD = fe.AutoSubDomain(lambda x: fe.near(x[1], Length, tol))
+topSD.mark(boundaries, 1)   # accessable via ds(1)
 ds = fe.ds(subdomain_data=boundaries)
 traction_topM = fe.Constant((0, overburden))		
 
@@ -102,7 +113,7 @@ traction_topM = fe.Constant((0, overburden))
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*pH/K + k_mu*fe.dot(fe.grad(vH), fe.grad(pH))*dt )*fe.dx
+aH = ( vH*pH/K + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH)) )*fe.dx
 
 LH = (vH*(p_n+sv_n-sv_)/K)*fe.dx 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
@@ -123,13 +134,16 @@ p.assign(p_n)
 u.assign(u_n)
 sv.assign(sv_n)   # hydrostatic total stress
 s_eff.assign(fe.project(sigma_eff(u), Vsig))    # effective stress
+s_total.assign(fe.project(sigma_eff(u)-p*fe.Identity(2), Vsig))
 vtkfile_p << (p, t)
 vtkfile_u << (u, t)
-vtkfile_sv << (sv,t)
-vtkfile_s_eff << (s_eff,t)
+vtkfile_sv << (sv, t)
+vtkfile_s_eff << (s_eff, t)
+vtkfile_s_total << (s_total, t)
 
-y_line=np.linspace(tol, 1-tol, 101)
-points=[(0.5, y_) for y_ in y_line]
+y_fem=np.linspace(tol, Length-tol, Ny+1)
+y_ana=np.linspace(tol, Length-tol, 101)
+points=[ ((1.0/2.0)*Width, y_) for y_ in y_fem ]
 conv_monitor=np.zeros((Nt, Nci_max))
 for n in range(Nt):     # time steps
     t += dt
@@ -155,16 +169,24 @@ for n in range(Nt):     # time steps
         
     if nn+1==Nci_max:
         print("Solution not converged to RelTol=", RelTol_ci)
-    p_line = np.array([ p(point) for point in points])
-    plt.plot(y_line, p_line)    
+    p_fem = np.array([ p(point) for point in points])
+    p_ana = terzaghi_analytical_solution.dim_sol(y_ana, t, N_Fourier, Length, cc, p_ref)
+    color_code=[0.9*(1-(n+1)/Nt)]*3
+    plt.plot(y_fem, p_fem,  color=color_code, linestyle='none', marker='x', markersize=6)    
+    plt.plot(y_ana, p_ana,  color=color_code)    
     #plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ])
     sv_n.assign(sv)     # shift forward time step
     p_n.assign(p)       # shift forward time step
+    s_total.assign(fe.project(sigma_eff(u)-p*fe.Identity(2), Vsig))
+    dt*=dt_prog
+    dT.assign(dt)
     print()
     vtkfile_p << (p,t)
     vtkfile_u << (u,t)
     vtkfile_sv << (sv,t)
     vtkfile_s_eff << (s_eff,t)
-plt.show()
+    vtkfile_s_total << (s_total, t)
+    # TODO xdmf for multiple fields
 
+plt.show()
 
