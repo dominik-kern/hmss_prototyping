@@ -29,11 +29,11 @@ dT=fe.Constant(dt) #  make time step mutable
 fe.set_log_level(30)  # control info/warning/error messages
 
 # vtu files for paraview (alternative: xdmf for multiple fields in one file)
-vtkfile_p = fe.File('fluidpressure.pvd')
-vtkfile_u = fe.File('displacement.pvd')
-vtkfile_s_eff = fe.File('effective_stress.pvd')
-vtkfile_sv = fe.File('hydrostatic_totalstress.pvd')
-vtkfile_s_total = fe.File('totalstress.pvd')
+vtkfile_p = fe.File('mini_staggered_fluidpressure.pvd')
+vtkfile_u = fe.File('mini_staggered_displacement.pvd')
+#vtkfile_s_eff = fe.File('mini_staggered_effective_stress.pvd')
+#vtkfile_sv = fe.File('mini_staggered_hydrostatic_totalstress.pvd')
+vtkfile_s_total = fe.File('mini_staggered_totalstress.pvd')
 
 def max_norm_delta(f1, f2):
     vertex_values_f1 = f1.compute_vertex_values(mesh)
@@ -80,6 +80,7 @@ def bottom(x, on_boundary):
 bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
 
 def leftright(x, on_boundary):    
+    #return True
     return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
 bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 bcM = [bcMfixed, bcMroller]
@@ -123,8 +124,8 @@ s_eff.assign(fe.project(material.sigma_eff(u), Vsigma))    # effective stress
 s_total.assign(fe.project(material.sigma_eff(u)-p*fe.Identity(2), Vsigma))
 vtkfile_p << (p, t)
 vtkfile_u << (u, t)
-vtkfile_sv << (sv, t)
-vtkfile_s_eff << (s_eff, t)
+#vtkfile_sv << (sv, t)
+#vtkfile_s_eff << (s_eff, t)
 vtkfile_s_total << (s_total, t)
 
 y_staggered=np.linspace(tol, Length-tol, Ny+1)
@@ -169,10 +170,10 @@ for n in range(Nt):     # time steps
     #print()
     vtkfile_p << (p,t)
     vtkfile_u << (u,t)
-    vtkfile_sv << (sv,t)
-    vtkfile_s_eff << (s_eff,t)
+    #vtkfile_sv << (sv,t)
+    #vtkfile_s_eff << (s_eff,t)
     vtkfile_s_total << (s_total, t)
 
 plt.show()
-np.savetxt("results_y_staggered.txt", y_staggered)
-np.savetxt("results_p_staggered.txt", p_staggered)
+np.savetxt("mini_y_staggered.txt", y_staggered)
+np.savetxt("mini_p_staggered.txt", p_staggered)

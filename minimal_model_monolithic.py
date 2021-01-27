@@ -27,8 +27,8 @@ material=sas.SAS(Lame1, Lame2)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
 
 fe.set_log_level(30)  # control info/warning/error messages
-vtkfile_pu = fe.File('pressure_displacement.pvd')
-vtkfile_s_total = fe.File('totalstress.pvd')    # xdmf for multiple fields
+vtkfile_pu = fe.File('mini_mono_pressure_displacement.pvd')
+vtkfile_s_total = fe.File('mini_mono_totalstress.pvd')    # xdmf for multiple fields
 
 
 ## MESH (simplex elements in 2D=triangles) 
@@ -68,6 +68,7 @@ def bottom(x, on_boundary):
 bc_bottom = fe.DirichletBC(V.sub(1), ZeroVector, bottom)   # fixed bottom
 
 def leftright(x, on_boundary):    
+    #return True
     return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
 bc_leftright = fe.DirichletBC(V.sub(1).sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 
@@ -130,5 +131,5 @@ for n in range(Nt):     # time steps
 
 #plt.show()
 
-np.savetxt("results_y_mono.txt", y_mono)
-np.savetxt("results_p_mono.txt", p_mono)
+np.savetxt("mini_y_mono.txt", y_mono)
+np.savetxt("mini_p_mono.txt", p_mono)

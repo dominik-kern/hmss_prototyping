@@ -56,20 +56,20 @@ Nx, Ny, dt, dt_prog, Nt, _, _ = model.get_fem_parameters()
 Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 
-N_Fourier=50
+N_Fourier=100
 y_ana = np.linspace(0, Length, 101)
 
-y_mono=np.loadtxt("results_y_mono.txt")
-p_mono=np.loadtxt("results_p_mono.txt")
+y_mono=np.loadtxt("mini_y_mono.txt")
+p_mono=np.loadtxt("mini_p_mono.txt")
 
-y_staggered=np.loadtxt("results_y_staggered.txt")
-p_staggered=np.loadtxt("results_p_staggered.txt")
+y_staggered=np.loadtxt("mini_y_staggered.txt")
+p_staggered=np.loadtxt("mini_p_staggered.txt")
 
 t=0.0
 for n in range(Nt):     # time steps
     t += dt
     dt*=dt_prog
-    p_ana = dim_sol(y_ana, t, N_Fourier, Length, cc, p_load)
+    p_ana = dim_sol(y_ana, t+dt/20, N_Fourier, Length, cc, p_load)
     color_code=[0.9*(1-(n+1)/Nt)]*3
     plt.plot(y_ana, p_ana,  color=color_code)    
     plt.plot(y_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    

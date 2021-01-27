@@ -20,8 +20,8 @@ class MMP:
     # FEM parameters    
         self.Nx=10        # mesh divisions x-direction
         self.Ny=10       # mesh divisions y-direction
-        self.dt=0.01 # initial time step
-        self.dt_prog=1.15 # time step progression
+        self.dt=0.005 # initial time step
+        self.dt_prog=1.2 # time step progression
         self.Nt=20   # number of time steps
     # only for staggered
         self.Nci_max=100   # maximal number of coupling iterations
