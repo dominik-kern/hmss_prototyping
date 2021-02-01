@@ -11,18 +11,20 @@ from __future__ import print_function
 import fenics as fe
 import numpy as np
 #import matplotlib.pyplot as plt
-import minimal_model_parameters as mmp
+import kim_case1_parameters as kc1
 import stress_and_strain as sas
 
 
 # DECLARATION
-model=mmp.MMP()
+model=kc1.KC1()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
-p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, _, _ = model.get_fem_parameters()
-Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
-p_ic, p_bc, p_load = model.get_icbc() 
+p_ref,  E,  nu,  k,  mu,  rho_f,  tau,  beta_s,  phi=model.get_physical_parameters()
+Nx,  Ny,  dt,  dt_prog,  Nt,  Nci_max,  RelTol_ci=model.get_fem_parameters()
+Length,  Width,  K,  Lame1,  Lame2,  k_mu,  cc,  alpha,  S=model.get_dependent_parameters()
+p_ic,  p_bc,  p_load=model.get_icbc()
+
+
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
 
@@ -32,8 +34,7 @@ vtkfile_s_total = fe.File('mini_mono_totalstress.pvd')    # xdmf for multiple fi
 
 
 ## MESH (simplex elements in 2D=triangles) 
-mesh = fe.UnitSquareMesh(Nx, Ny)
-#mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
+mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny])   # , fe.CellType.Type.quadrilateral
 
 Pp = fe.FiniteElement('P', fe.triangle, 1)
 Pu = fe.VectorElement('P', fe.triangle, 2)
@@ -46,7 +47,7 @@ pu_ = fe.Function(V, name="pressure_displacement")    # function solved for and 
 sigma_ = fe.Function(Vsigma, name="total_stress")    # function solved for and written to file
 
 
-# INITIAL CONDITIONS: undeformed, at rest, same pressure everywhere
+# INITIAL CONDITIONS: undeformed, at rest, zero pressure everywhere
 pu_ic = fe.Expression(
         (
             p_ic,       		# p    
@@ -65,7 +66,7 @@ bc_top = fe.DirichletBC(V.sub(0), p_bc, top)  # drainage on top
 
 def bottom(x, on_boundary):    
     return on_boundary and fe.near(x[1], 0.0, tol)   
-bc_bottom = fe.DirichletBC(V.sub(1), ZeroVector, bottom)   # fixed bottom
+bc_bottom = fe.DirichletBC(V, (p_bc, 0,0), bottom)   # fixed bottom and drainage
 
 def leftright(x, on_boundary):    
     #return True
@@ -92,6 +93,7 @@ p, u = fe.split(pu)
 p_n, u_n = fe.split(pu_n)
 sigma_.assign(fe.project(material.sigma(p_n, u_n), Vsigma))
 
+# CONTINUE
 Fdx = ( (fe.div(u)-fe.div(u_n))*vp
      + dT*k_mu*fe.dot(fe.grad(p/2+p_n/2), fe.grad(vp))   # midpoint
      + fe.inner(material.sigma(p,u), material.epsilon(vu)) )*fe.dx 

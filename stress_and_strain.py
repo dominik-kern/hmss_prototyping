@@ -12,9 +12,10 @@ import fenics as fe
 # Define strain and stress (2D plain strain)
 class SAS:
     
-    def __init__(self, Lame1, Lame2):
+    def __init__(self, Lame1, Lame2, K):
         self.Lame1=Lame1
         self.Lame2=Lame2
+        self.K=K
 
     def epsilon(self, u):
         return fe.sym(fe.grad(u))
@@ -24,3 +25,7 @@ class SAS:
 
     def sigma(self, p, u):
         return self.sigma_eff(u) - p * fe.Identity(2)
+
+    def sv(self, p, u):
+        return self.K*fe.div(u) - p
+

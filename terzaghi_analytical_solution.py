@@ -21,11 +21,15 @@ def nondim_sol(x, t, N):
         P=P+S*T*X
     return P
 
-def dim_sol(x, t, N, L, c, topload):
+def dim_sol(x, t, N, L, c, overpressure):
     tau=(L**2)/c
     X=x/L
     T=t/tau
-    p=nondim_sol(X, T, N)/topload
+    if abs(overpressure)>0:
+        p=nondim_sol(X, T, N)*overpressure
+    else:
+        p=0*X
+       
     return np.flip(p)   # flip left and right
 
 """
@@ -69,8 +73,9 @@ t=0.0
 for n in range(Nt):     # time steps
     t += dt
     dt*=dt_prog
-    p_ana = dim_sol(y_ana, t+dt/20, N_Fourier, Length, cc, p_load)
+    p_ana = dim_sol(y_ana, t-dt/2, N_Fourier, Length, cc, p_load-p_bc) + p_bc
     color_code=[0.9*(1-(n+1)/Nt)]*3
-    plt.plot(y_ana, p_ana,  color=color_code)    
-    plt.plot(y_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    
-    plt.plot(y_staggered, p_staggered[n,:],  color=color_code, linestyle='none', marker='x', markersize=6)    
+    if Nt<21 or n % 10 == 1:
+        plt.plot(y_ana, p_ana,  color=color_code)    
+        plt.plot(y_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    
+        plt.plot(y_staggered, p_staggered[n,:],  color=color_code, linestyle='none', marker='x', markersize=6)    

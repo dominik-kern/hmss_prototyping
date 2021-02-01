@@ -11,33 +11,33 @@ Parameters and functions for minimal model
 class MMP:
     def __init__(self):
     # physical parameters
-        self.p_ref = 1.0    # reference pressure
+        self.p_ref = 2.0    # reference pressure
         self.E = 10.0  # Young's modulus (bulk, drained)
         self.nu = 0.0;     # Poisson ratio (bulk)
         self.k = 0.1   # permeability
         self.mu = 1.0    # viscosity
 
     # FEM parameters    
-        self.Nx=10        # mesh divisions x-direction
-        self.Ny=10       # mesh divisions y-direction
-        self.dt=0.005 # initial time step
-        self.dt_prog=1.2 # time step progression
-        self.Nt=20   # number of time steps
+        self.Nx=20        # mesh divisions x-direction
+        self.Ny=20       # mesh divisions y-direction
+        self.dt=0.01 # initial time step
+        self.dt_prog=1.0 # time step progression
+        self.Nt=10   # number of time steps
     # only for staggered
         self.Nci_max=100   # maximal number of coupling iterations
         self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
         
     # initial and boundary conditions
-        self.p_ic=0*self.p_ref
-        self.p_bc=0*self.p_ref    # H BC
-        self.p_load=1*self.p_ref  # HM BC
+        self.p_ic=1*self.p_ref
+        self.p_bc=1*self.p_ref    # H BC
+        self.p_load=3*self.p_ref  # HM BC
 
     # dependent parameters
         self.Length = 1 # unit square!
         self.Width = 1 # unit square!
-        self.K=self.E/(3.0*(1-2*self.nu))
         self.Lame1 = self.E*self.nu/((1+self.nu)*(1-2*self.nu))
         self.Lame2 = self.E/(2*(1+self.nu)) 
+        self.K=self.Lame1 + (2.0/3.0)*self.Lame2  
         self.k_mu = self.k/self.mu
         self.cc = self.E*self.k_mu # consolidation coefficient
         
