@@ -1,41 +1,36 @@
 # TODO 
-#    better predictor and acceleration
+#    compare with undrained
 #    nonzero initial guess
 #    quadliteral mesh
 """
-2D Minimal model (of 1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
+2D model of Kim case 1 (1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
 spatial FE discretization (plane strain) for both H and M (Taylor Hood)
-temporal Euler-backward discretization
-incompressible fluid, incompressible solid (but linear elastic bulk)
+temporal midpoint discretization
 """
 from __future__ import print_function
 import fenics as fe
 import numpy as np
 import matplotlib.pyplot as plt
-import minimal_model_parameters as mmp
+import kim_case1_parameters as kc1
 import stress_and_strain as sas
-model=mmp.MMP()
-
 
 # DECLARATION
-model=mmp.MMP()
+model=kc1.KC1()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
-p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci = model.get_fem_parameters()
-Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
-p_ic, p_bc, p_load = model.get_icbc() 
+p_ref,  E,  nu,  k,  mu,  rho_f,  tau,  beta_s,  phi=model.get_physical_parameters()
+Nx,  Ny,  dt,  dt_prog,  Nt,  Nci_max,  RelTol_ci=model.get_fem_parameters()
+Length,  Width,  K,  Lame1,  Lame2,  k_mu,  cc,  alpha,  S, tc_DK, tc_TD=model.get_dependent_parameters()
+p_ic,  p_bc,  p_load=model.get_icbc()
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
 
 fe.set_log_level(30)  # control info/warning/error messages
 
 # vtu files for paraview (alternative: xdmf for multiple fields in one file)
-vtkfile_p = fe.File('mini_staggered_fluidpressure.pvd')
-vtkfile_u = fe.File('mini_staggered_displacement.pvd')
-#vtkfile_s_eff = fe.File('mini_staggered_effective_stress.pvd')
-#vtkfile_sv = fe.File('mini_staggered_hydrostatic_totalstress.pvd')
-vtkfile_s_total = fe.File('mini_staggered_totalstress.pvd')
+vtkfile_p = fe.File('kim1_staggered_fluidpressure.pvd')
+vtkfile_u = fe.File('kim1_staggered_displacement.pvd')
+vtkfile_s_total = fe.File('kim1_staggered_totalstress.pvd')
 
 def max_norm_delta(f1, f2):
     vertex_values_f1 = f1.compute_vertex_values(mesh)
@@ -44,8 +39,7 @@ def max_norm_delta(f1, f2):
 
 
 # MESH (simplex elements in 2D=triangles)
-mesh = fe.UnitSquareMesh(Nx, Ny)
-#mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
+mesh = fe.RectangleMesh(fe.Point(0, 0), fe.Point(Width, Length), Nx,Ny)   # , fe.CellType.Type.quadrilateral
 
 VH = fe.FunctionSpace(mesh, 'P', 1)
 VM = fe.VectorFunctionSpace(mesh, 'P', 2)   
@@ -74,17 +68,19 @@ sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at 
 tol = 1E-14
 def top(x, on_boundary):    
     return on_boundary and fe.near(x[1], Length, tol) 
-bcH = fe.DirichletBC(VH, p_bc, top)  # drainage on top 
+bcHdraintop = fe.DirichletBC(VH, p_bc, top)  # drainage on top 
 
 def bottom(x, on_boundary):    
     return on_boundary and fe.near(x[1], 0.0, tol)   
 bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
+bcHdrainbottom = fe.DirichletBC(VH, p_bc, bottom)  # drainage on bottom
 
 def leftright(x, on_boundary):    
     #return True
     return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
 bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 bcM = [bcMfixed, bcMroller]
+bcH = [bcHdraintop, bcHdrainbottom]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
 boundaries = fe.MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
@@ -100,9 +96,9 @@ traction_topM = fe.Constant((0, -p_load))
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*pH/K + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
+aH = ( vH*alpha*pH/K + vH*S*pH + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
 
-LH = ( vH*(p_n-(sv_-sv_n))/K - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx 
+LH = ( vH*alpha*(p_n-(sv_-sv_n))/K + vH*S*p_n - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
 # no sources
 
@@ -153,7 +149,7 @@ for n in range(Nt):     # time steps
         if conv_criterium < RelTol_ci:
             break
 
-    #sv_.assign(2*sv-sv_n)               # linear predictor
+    sv_.assign(sv + dt_prog*(sv-sv_n))               # linear predictor
     sv_n.assign(sv)     # shift forward time step
     p_n.assign(p)       # shift forward time step
     s_total.assign(fe.project(material.sigma(p, u), Vsigma))
@@ -177,5 +173,5 @@ for n in range(Nt):     # time steps
     vtkfile_s_total << (s_total, t)
 
 plt.show()
-np.savetxt("mini_y_staggered.txt", y_staggered)
-np.savetxt("mini_p_staggered.txt", p_staggered)
+np.savetxt("kim1_y_staggered.txt", y_staggered)
+np.savetxt("kim1_p_staggered.txt", p_staggered)

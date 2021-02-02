@@ -1,5 +1,5 @@
 # TODO 
-#    better predictor and acceleration
+#    explicit predictor 
 #    nonzero initial guess
 #    quadliteral mesh
 """
@@ -56,6 +56,8 @@ u = fe.Function(VM, name="displacement") # function to solve for and written to 
 s_eff = fe.Function(Vsigma, name="effective_stress")
 s_total = fe.Function(Vsigma, name="total_stress")
 sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
+ev = fe.Function(VH, name="volumetric strain")    # function solved for and written to file
+pp = fe.Function(VH, name="predicted pressure")    # function solved for and written to file
 
 
 # INITIAL CONDITIONS undeformed, at rest, constant pressure everywhere
@@ -68,6 +70,9 @@ sv_0 = material.sv(p_n, u_n)    # derive from initial state
 sv_n = fe.project(sv_0, VH)  # hydrostatic total stress at t_n 
 sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
 
+ev_0 = fe.div(u_n)
+ev_n = fe.project(ev_0, VH)
+ev_ = fe.project(ev_0, VH)
 
 # BOUNDARY CONDITIONS
 # DirichletBC, assign geometry via functions
@@ -115,6 +120,16 @@ aM = fe.inner(material.sigma_eff(uM), material.epsilon(vM))*fe.dx
 LM = p_*fe.div(vM)*fe.dx + fe.dot(vM, traction_topM)*ds(1)
 # no body forces
 
+# auxiliary problem for prediction (Forward, Backward)
+eF = fe.TrialFunction(VH)
+vF = fe.TestFunction(VH)
+aF = eF*vF*fe.dx
+LF = ( ev_n*vF - dT*k_mu*fe.dot(fe.grad(vF), fe.grad(p_n)) )*fe.dx 
+
+pB = fe.TrialFunction(VH)
+vB = fe.TestFunction(VH)
+aB = dT*k_mu*fe.dot(fe.grad(vB), fe.grad(pB))*fe.dx
+LB = -(ev_-ev_n)*vB*fe.dx
 
 # TIME-STEPPING
 t = 0.0
@@ -153,9 +168,16 @@ for n in range(Nt):     # time steps
         if conv_criterium < RelTol_ci:
             break
 
-    #sv_.assign(2*sv-sv_n)               # linear predictor
-    sv_n.assign(sv)     # shift forward time step
+    #sv_.assign(sv + dt_prog*(sv-sv_n))               # linear predictor (as Kim) progression
+    ev_n.assign(fe.project(fe.div(u), VH))
     p_n.assign(p)       # shift forward time step
+    fe.solve(aF == LF, ev)
+    ev_.assign(ev)
+    fe.solve(aB == LB, pp)
+    sv_.assign(ev_/K - pp)
+    
+    sv_n.assign(sv)     # shift forward time step
+    
     s_total.assign(fe.project(material.sigma(p, u), Vsigma))
     dt*=dt_prog
     dT.assign(dt)
