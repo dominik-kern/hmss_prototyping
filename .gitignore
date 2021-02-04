@@ -2,4 +2,5 @@ tmp/*
 *.vtu
 *.pvd
 *.txt
+__pycache__/
 
