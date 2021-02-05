@@ -22,7 +22,7 @@ model=mmp.MMP()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
 p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci = model.get_fem_parameters()
+Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci, Kss = model.get_fem_parameters()
 Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
@@ -107,7 +107,7 @@ vH = fe.TestFunction(VH)
 
 aH = ( vH*pH/K + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
 
-LH = ( vH*(p_n-(sv_-sv_n))/K - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx 
+LH = ( vH*(p_n-(sv_-sv_n))/K - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx # 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
 # no sources
 
@@ -120,16 +120,6 @@ aM = fe.inner(material.sigma_eff(uM), material.epsilon(vM))*fe.dx
 LM = p_*fe.div(vM)*fe.dx + fe.dot(vM, traction_topM)*ds(1)
 # no body forces
 
-# auxiliary problem for prediction (Forward, Backward)
-eF = fe.TrialFunction(VH)
-vF = fe.TestFunction(VH)
-aF = eF*vF*fe.dx
-LF = ( ev_n*vF - dT*k_mu*fe.dot(fe.grad(vF), fe.grad(p_n)) )*fe.dx 
-
-pB = fe.TrialFunction(VH)
-vB = fe.TestFunction(VH)
-aB = dT*k_mu*fe.dot(fe.grad(vB), fe.grad(pB))*fe.dx
-LB = -(ev_-ev_n)*vB*fe.dx
 
 # TIME-STEPPING
 t = 0.0
@@ -168,28 +158,29 @@ for n in range(Nt):     # time steps
         if conv_criterium < RelTol_ci:
             break
 
-    #sv_.assign(sv + dt_prog*(sv-sv_n))               # linear predictor (as Kim) progression
-    ev_n.assign(fe.project(fe.div(u), VH))
-    p_n.assign(p)       # shift forward time step
-    fe.solve(aF == LF, ev)
-    ev_.assign(ev)
-    fe.solve(aB == LB, pp)
-    sv_.assign(ev_/K - pp)
+    # postprocess
+    s_total.assign( fe.project(material.sigma(p, u), Vsigma))
+    p_staggered[n,:] = np.array([ p(point) for point in points])
+    color_code=[0.9*(1-(n+1)/Nt)]*3
+    plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ], color=color_code)
     
-    sv_n.assign(sv)     # shift forward time step
+    #sv_.assign(sv + dt_prog*(sv-sv_n)) # linear predictor for sv
+    # advanced predictor (mechanics conform)
+    #p_.assign( fe.project(p + dt_prog*(p-p_n), VH))    # linear predictor for p
+    #fe.solve(aM == LM, u, bcM)
+    #sv_.assign( fe.project( material.sv(p_, u), VH)) # sv corresponding to predicted p
     
-    s_total.assign(fe.project(material.sigma(p, u), Vsigma))
-    dt*=dt_prog
+    # shift forward time step
+    p_n.assign(p)
+    sv_n.assign(sv)     
+    
+    dt*=dt_prog # used in predictor system
     dT.assign(dt)
     if nn+1==Nci_max:
         print(str(n+1),". time step   t=",str(t),"   Solution not converged to ",str(RelTol_ci)," in ",str(nn+1)," coupling iterations!")
     else:
         print(str(n+1),". time step   t=",str(t),"   ",str(nn+1)," coupling iterations")
-    
-    p_staggered[n,:] = np.array([ p(point) for point in points])
 
-    color_code=[0.9*(1-(n+1)/Nt)]*3
-    plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ], color=color_code)
     
     #print()
     vtkfile_p << (p,t)

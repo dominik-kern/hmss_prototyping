@@ -1,36 +1,41 @@
 # TODO 
-#    compare with undrained
+#    explicit predictor 
 #    nonzero initial guess
 #    quadliteral mesh
 """
-2D model of Kim case 1 (1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
+2D Minimal model (of 1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
 spatial FE discretization (plane strain) for both H and M (Taylor Hood)
-temporal midpoint discretization
+temporal Euler-backward discretization
+incompressible fluid, incompressible solid (but linear elastic bulk)
 """
 from __future__ import print_function
 import fenics as fe
 import numpy as np
 import matplotlib.pyplot as plt
-import kim_case1_parameters as kc1
+import minimal_model_parameters as mmp
 import stress_and_strain as sas
+model=mmp.MMP()
+
 
 # DECLARATION
-model=kc1.KC1()
+model=mmp.MMP()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
-p_ref,  E,  nu,  k,  mu,  rho_f,  tau,  beta_s,  phi=model.get_physical_parameters()
-Nx,  Ny,  dt,  dt_prog,  Nt,  Nci_max,  RelTol_ci, Kss=model.get_fem_parameters()
-Length,  Width,  K,  Lame1,  Lame2,  k_mu,  cc,  alpha,  S, tc_DK, tc_TD=model.get_dependent_parameters()
-p_ic,  p_bc,  p_load=model.get_icbc()
+p_ref, _, _, k, mu = model.get_physical_parameters()
+Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci, Kss = model.get_fem_parameters()
+Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
+p_ic, p_bc, p_load = model.get_icbc() 
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
 
 fe.set_log_level(30)  # control info/warning/error messages
 
 # vtu files for paraview (alternative: xdmf for multiple fields in one file)
-vtkfile_p = fe.File('kim1_staggered_fluidpressure.pvd')
-vtkfile_u = fe.File('kim1_staggered_displacement.pvd')
-vtkfile_s_total = fe.File('kim1_staggered_totalstress.pvd')
+vtkfile_p = fe.File('mini_staggered_fluidpressure.pvd')
+vtkfile_u = fe.File('mini_staggered_displacement.pvd')
+#vtkfile_s_eff = fe.File('mini_staggered_effective_stress.pvd')
+#vtkfile_sv = fe.File('mini_staggered_hydrostatic_totalstress.pvd')
+vtkfile_s_total = fe.File('mini_staggered_totalstress.pvd')
 
 def max_norm_delta(f1, f2):
     vertex_values_f1 = f1.compute_vertex_values(mesh)
@@ -39,7 +44,8 @@ def max_norm_delta(f1, f2):
 
 
 # MESH (simplex elements in 2D=triangles)
-mesh = fe.RectangleMesh(fe.Point(0, 0), fe.Point(Width, Length), Nx,Ny)   # , fe.CellType.Type.quadrilateral
+mesh = fe.UnitSquareMesh(Nx, Ny)
+#mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
 
 VH = fe.FunctionSpace(mesh, 'P', 1)
 VM = fe.VectorFunctionSpace(mesh, 'P', 2)   
@@ -50,6 +56,8 @@ u = fe.Function(VM, name="displacement") # function to solve for and written to 
 s_eff = fe.Function(Vsigma, name="effective_stress")
 s_total = fe.Function(Vsigma, name="total_stress")
 sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
+ev = fe.Function(VH, name="volumetric strain")    # function solved for and written to file
+pp = fe.Function(VH, name="predicted pressure")    # function solved for and written to file
 
 
 # INITIAL CONDITIONS undeformed, at rest, constant pressure everywhere
@@ -62,25 +70,26 @@ sv_0 = material.sv(p_n, u_n)    # derive from initial state
 sv_n = fe.project(sv_0, VH)  # hydrostatic total stress at t_n 
 sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
 
+ev_0 = fe.div(u_n)
+ev_n = fe.project(ev_0, VH)
+ev_ = fe.project(ev_0, VH)
 
 # BOUNDARY CONDITIONS
 # DirichletBC, assign geometry via functions
 tol = 1E-14
 def top(x, on_boundary):    
     return on_boundary and fe.near(x[1], Length, tol) 
-bcHdraintop = fe.DirichletBC(VH, p_bc, top)  # drainage on top 
+bcH = fe.DirichletBC(VH, p_bc, top)  # drainage on top 
 
 def bottom(x, on_boundary):    
     return on_boundary and fe.near(x[1], 0.0, tol)   
 bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
-bcHdrainbottom = fe.DirichletBC(VH, p_bc, bottom)  # drainage on bottom
 
 def leftright(x, on_boundary):    
     #return True
     return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
 bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
 bcM = [bcMfixed, bcMroller]
-bcH = [bcHdraintop, bcHdrainbottom]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
 boundaries = fe.MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
@@ -96,9 +105,9 @@ traction_topM = fe.Constant((0, -p_load))
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*alpha*pH/K + vH*S*pH + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
+aH = ( dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
 
-LH = ( vH*alpha*(p_n/K-(sv_-sv_n)/K) + vH*S*p_n - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx 
+LH = ( -vH*(ev_-ev_n) - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx # 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
 # no sources
 
@@ -139,31 +148,39 @@ for n in range(Nt):     # time steps
         
         fe.solve(aM == LM, u, bcM)
         #s_eff.assign(fe.project(material.sigma_eff(u), Vsigma))    # effective stress
-        sv.assign( fe.project( material.sv(p, u), VH) )    # hydrostatic total stress
-        delta_sv=max_norm_delta(sv_, sv)
-        sv_.assign(sv)   # shift forward coupling iteration
+        ev.assign( fe.project( fe.div(u), VH) )    # hydrostatic total stress
+        delta_ev=max_norm_delta(ev_, ev)
+        ev_.assign(ev)   # shift forward coupling iteration
         
         #print(nn+1,'. ', delta_p, delta_sv)
-        conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_sv/p_ref)  # take both to exclude random hit of one variable at initial state
+        conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_ev/p_ref)  # take both to exclude random hit of one variable at initial state
         conv_monitor[n,nn]=conv_criterium
         if conv_criterium < RelTol_ci:
             break
 
-    sv_.assign(sv + dt_prog*(sv-sv_n))               # linear predictor
-    sv_n.assign(sv)     # shift forward time step
-    p_n.assign(p)       # shift forward time step
-    s_total.assign(fe.project(material.sigma(p, u), Vsigma))
-    dt*=dt_prog
+    # postprocess
+    s_total.assign( fe.project(material.sigma(p, u), Vsigma))
+    p_staggered[n,:] = np.array([ p(point) for point in points])
+    color_code=[0.9*(1-(n+1)/Nt)]*3
+    plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ], color=color_code)
+    
+    #sv_.assign(sv + dt_prog*(sv-sv_n)) # linear predictor for sv
+    # advanced predictor (mechanics conform)
+    #p_.assign( fe.project(p + dt_prog*(p-p_n), VH))    # linear predictor for p
+    #fe.solve(aM == LM, u, bcM)
+    #sv_.assign( fe.project( material.sv(p_, u), VH)) # sv corresponding to predicted p
+    
+    # shift forward time step
+    p_n.assign(p)
+    ev_n.assign(ev)     
+    
+    dt*=dt_prog # used in predictor system
     dT.assign(dt)
     if nn+1==Nci_max:
         print(str(n+1),". time step   t=",str(t),"   Solution not converged to ",str(RelTol_ci)," in ",str(nn+1)," coupling iterations!")
     else:
         print(str(n+1),". time step   t=",str(t),"   ",str(nn+1)," coupling iterations")
-    
-    p_staggered[n,:] = np.array([ p(point) for point in points])
 
-    color_code=[0.9*(1-(n+1)/Nt)]*3
-    plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ], color=color_code)
     
     #print()
     vtkfile_p << (p,t)
@@ -173,5 +190,5 @@ for n in range(Nt):     # time steps
     vtkfile_s_total << (s_total, t)
 
 plt.show()
-np.savetxt("kim1_y_staggered.txt", y_staggered)
-np.savetxt("kim1_p_staggered.txt", p_staggered)
+np.savetxt("mini_y_staggered.txt", y_staggered)
+np.savetxt("mini_p_staggered.txt", p_staggered)

@@ -1,4 +1,6 @@
 # TODO 
+#    run_solver(dim, N, Pu, Pp, dt)
+#if __name__ == '__main__':
 #    elasticity 3D
 #    quadliteral mesh
 """
@@ -20,7 +22,7 @@ model=mmp.MMP()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
 p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, _, _ = model.get_fem_parameters()
+Nx, Ny, dt, dt_prog, Nt, _, _, _ = model.get_fem_parameters()
 Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain

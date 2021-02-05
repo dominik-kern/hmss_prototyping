@@ -30,6 +30,7 @@ class KC1:
     # only for staggered
         self.Nci_max=100   # maximal number of coupling iterations
         self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
+        self.Kss=1.0   # ratio of bulk modulus in coupling term to real bulk modulus
         
     # dependent parameters
         self.Length = 30 # Length (y)
@@ -58,7 +59,7 @@ class KC1:
 
     def get_fem_parameters(self):
     # staggered and mono
-        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci]
+        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci, self.Kss]
 
     def get_dependent_parameters(self):
         return [self.Length, self.Width, self.K, self.Lame1, self.Lame2, self.k_mu, self.cc, self.alpha, self.S, self.tc_DK, self.tc_TD]

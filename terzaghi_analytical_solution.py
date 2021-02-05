@@ -56,7 +56,7 @@ def terzaghi_example():
 
 model=mmp.MMP()
 p_ref, E, nu, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, _, _ = model.get_fem_parameters()
+Nx, Ny, dt, dt_prog, Nt, _, _, _ = model.get_fem_parameters()
 Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 
@@ -79,3 +79,7 @@ for n in range(Nt):     # time steps
         plt.plot(y_ana, p_ana,  color=color_code)    
         plt.plot(y_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    
         plt.plot(y_staggered, p_staggered[n,:],  color=color_code, linestyle='none', marker='x', markersize=6)    
+
+plt.ylim(min(p_bc, p_load)-abs(p_ref)/10.0, max(p_bc, p_load)+abs(p_ref)/10.0)
+
+
