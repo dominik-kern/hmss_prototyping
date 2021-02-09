@@ -18,8 +18,8 @@ class MMP:
         self.mu = 1.0    # viscosity
 
     # FEM parameters    
-        self.Nx=10        # mesh divisions x-direction
-        self.Ny=10       # mesh divisions y-direction
+        self.Nx=32        # mesh divisions x-direction
+        self.Ny=32       # mesh divisions y-direction
         self.dt=0.1 # initial time step
         self.dt_prog=1.0 # time step progression
         self.Nt=10   # number of time steps
