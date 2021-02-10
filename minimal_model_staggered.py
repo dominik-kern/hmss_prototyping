@@ -22,7 +22,7 @@ model=mmp.MMP()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
 p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci, Kss = model.get_fem_parameters()
+Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci, betaFS = model.get_fem_parameters()
 Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
@@ -37,7 +37,7 @@ vtkfile_u = fe.File('mini_staggered_displacement.pvd')
 #vtkfile_sv = fe.File('mini_staggered_hydrostatic_totalstress.pvd')
 vtkfile_s_total = fe.File('mini_staggered_totalstress.pvd')
 
-def max_norm_delta(f1, f2):
+def max_norm_delta(f1, f2):   # TODO RelTol in dimensional equations
     vertex_values_f1 = f1.compute_vertex_values(mesh)
     vertex_values_f2 = f2.compute_vertex_values(mesh)
     return np.max( np.abs(vertex_values_f1 - vertex_values_f2) )
@@ -52,6 +52,7 @@ VM = fe.VectorFunctionSpace(mesh, 'P', 2)
 Vsigma = fe.TensorFunctionSpace(mesh, "P", 1)     
 
 p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
+pp = fe.Function(VH, name="predicted_fluidpressure")    # function solved for and written to file
 u = fe.Function(VM, name="displacement") # function to solve for and written to file
 s_eff = fe.Function(Vsigma, name="effective_stress")
 s_total = fe.Function(Vsigma, name="total_stress")
@@ -66,10 +67,10 @@ p_n = fe.interpolate(p_0, VH)   # fluid pressure at t=t_n
 p_ = fe.interpolate(p_0, VH)   # fluid pressure at t=t_(n+1) at coupling iterations
 u_0 =fe.Expression( ('0','0'), degree=2)    # undeformed
 u_n = fe.interpolate(u_0, VM)   # displacement at t=t_n
-sv_0 = material.sv(p_n, u_n)    # derive from initial state
-sv_n = fe.project(sv_0, VH)  # hydrostatic total stress at t_n 
-sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
 
+#sv_0 = material.sv(p_n, u_n)    # derive from initial state
+#sv_n = fe.project(sv_0, VH)  # hydrostatic total stress at t_n 
+#sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
 ev_0 = fe.div(u_n)
 ev_n = fe.project(ev_0, VH)
 ev_ = fe.project(ev_0, VH)
@@ -105,9 +106,9 @@ traction_topM = fe.Constant((0, -p_load))
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*pH/K + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
+aH = ( vH*pH*betaFS + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
 
-LH = ( vH*(p_n-(sv_-sv_n))/K - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx # 
+LH = ( vH*p_*betaFS - vH*(ev_-ev_n) - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx # 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
 # no sources
 
@@ -120,6 +121,13 @@ aM = fe.inner(material.sigma_eff(uM), material.epsilon(vM))*fe.dx
 LM = p_*fe.div(vM)*fe.dx + fe.dot(vM, traction_topM)*ds(1)
 # no body forces
 
+# predictor
+pP = fe.TrialFunction(VH)
+vP = fe.TestFunction(VH)
+
+aP = vP*pP*fe.dx
+
+LP = ( vP*p_ - dT*K*k_mu*fe.dot(fe.grad(vP), fe.grad(p_)) )*fe.dx 
 
 # TIME-STEPPING
 t = 0.0
@@ -147,13 +155,12 @@ for n in range(Nt):     # time steps
         p_.assign(p)    # shift forward coupling iteration
         
         fe.solve(aM == LM, u, bcM)
-        #s_eff.assign(fe.project(material.sigma_eff(u), Vsigma))    # effective stress
-        sv.assign( fe.project( material.sv(p, u), VH) )    # hydrostatic total stress
-        delta_sv=max_norm_delta(sv_, sv)
-        sv_.assign(sv)   # shift forward coupling iteration
+        ev = fe.project( fe.div(u), VH )
+        delta_ev=max_norm_delta(ev_, ev)
+        ev_.assign(ev)   # shift forward coupling iteration
         
         #print(nn+1,'. ', delta_p, delta_sv)
-        conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_sv/p_ref)  # take both to exclude random hit of one variable at initial state
+        conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_ev/p_ref)  # take both to exclude random hit of one variable at initial state
         conv_monitor[n,nn]=conv_criterium
         if conv_criterium < RelTol_ci:
             break
@@ -164,16 +171,15 @@ for n in range(Nt):     # time steps
     color_code=[0.9*(1-(n+1)/Nt)]*3
     plt.plot([ np.log10(R) for R in conv_monitor[n,:] if R>0 ], color=color_code)
     
-    #sv_.assign(sv + dt_prog*(sv-sv_n)) # linear predictor for sv
-    # advanced predictor (mechanics conform)
-    #p_.assign( fe.project(p + dt_prog*(p-p_n), VH))    # linear predictor for p
-    #fe.solve(aM == LM, u, bcM)
-    #sv_.assign( fe.project( material.sv(p_, u), VH)) # sv corresponding to predicted p
+    # predictor
+    #p_.assign( fe.project(p + 0.0*dt_prog*(p-p_n), VH))    # linear extrapolation for p
+    #fe.solve(aP == LP, pp, bcH)
+    #p_.assign(pp)
     
     # shift forward time step
     p_n.assign(p)
-    sv_n.assign(sv)     
-    
+    ev_n.assign(ev)     
+
     dt*=dt_prog # used in predictor system
     dT.assign(dt)
     if nn+1==Nci_max:

@@ -2,7 +2,9 @@
 Convergence of the HM formulation at a minimum example
 running and comparing several cases with numerical reference example
 
-TODO redesign in an all-in-one  class (material, model, discretization) 
+TODO
+    manufactured solution as reference 
+    redesign in an all-in-one  class (material, model, discretization) 
 """
 
 from __future__ import print_function
@@ -140,17 +142,23 @@ Nx=2
 Ny=2
 cases.append((deg_p, deg_u, Nx, Ny, dt, Nt))
 
-Nx=4
-Ny=4
+#Nx=4
+#Ny=4
+deg_p=2
+deg_u=3
 cases.append((deg_p, deg_u, Nx, Ny, dt, Nt))
 
-Nx=8
-Ny=8
+#Nx=8
+#Ny=8
+deg_p=3
+deg_u=4
 cases.append((deg_p, deg_u, Nx, Ny, dt, Nt))
 
-Nx=16
-Ny=16
-cases.append((deg_p, deg_u, Nx, Ny, dt, Nt))
+#Nx=16
+#Ny=16
+#deg_p=3
+#deg_u=4
+#cases.append((deg_p, deg_u, Nx, Ny, dt, Nt))
 
 
 print("case")
@@ -235,16 +243,20 @@ for case in cases:
         PREF = p_history[n]
         p_error = np.max(np.abs(PC-PREF))
         plt.figure(0)
-        plt.plot(np.log(h), np.log(p_error), 'o', color=color_code) 
-        plt.xlabel("log(h)") 
+        #plt.plot(np.log(h), np.log(p_error), 'o', color=color_code) 
+        plt.plot(deg_p, np.log(p_error), 'o', color=color_code) 
+        #plt.xlabel("log(h)") 
+        plt.xlabel("degree p") 
         plt.ylabel("log(p_error)")
         
         UC = uc_history[n]       
         UREF = u_history[n]
         u_error = np.max(np.abs(UC-UREF))
         plt.figure(1)
-        plt.plot(np.log(h), np.log(u_error), 'o', color=color_code) 
-        plt.xlabel("log(h)") 
+        #plt.plot(np.log(h), np.log(u_error), 'o', color=color_code) 
+        plt.plot(deg_u, np.log(u_error), 'o', color=color_code) 
+        #plt.xlabel("log(h)") 
+        plt.xlabel("degree u") 
         plt.ylabel("log(u_error)")
         
 

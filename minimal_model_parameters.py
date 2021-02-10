@@ -16,18 +16,7 @@ class MMP:
         self.nu = 0.0;     # Poisson ratio (bulk), 1D model converges faster for nu=0.5-TOL
         self.k = 0.1   # permeability
         self.mu = 1.0    # viscosity
-
-    # FEM parameters    
-        self.Nx=32        # mesh divisions x-direction
-        self.Ny=32       # mesh divisions y-direction
-        self.dt=0.1 # initial time step
-        self.dt_prog=1.0 # time step progression
-        self.Nt=10   # number of time steps
-    # only for staggered
-        self.Nci_max=100   # maximal number of coupling iterations
-        self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
-        self.Kss=1.0# ratio for coupling bulk modulus to real
-        
+       
     # initial and boundary conditions
         self.p_ic=1*self.p_ref
         self.p_bc=1*self.p_ref    # H BC
@@ -42,13 +31,25 @@ class MMP:
         self.k_mu = self.k/self.mu
         self.cc = self.E*self.k_mu # consolidation coefficient
         
+    # FEM parameters    
+        self.Nx=4        # mesh divisions x-direction
+        self.Ny=4       # mesh divisions y-direction
+        self.dt=0.1 # initial time step
+        self.dt_prog=1.0 # time step progression
+        self.Nt=10   # number of time steps
+    # only for staggered
+        self.Nci_max=100   # maximal number of coupling iterations
+        self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
+        self.betaFS=1.0/(2.0*(self.Lame1 + (2.0/2.0)*self.Lame2)) 
+
+        
         
     def get_physical_parameters(self):
         return [self.p_ref, self.E, self.nu, self.k, self.mu]
 
     def get_fem_parameters(self):
     # staggered and mono
-        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci, self.Kss]
+        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci, self.betaFS]
 
     def get_dependent_parameters(self):
         return [self.Length, self.Width, self.K, self.Lame1, self.Lame2, self.k_mu, self.cc]
