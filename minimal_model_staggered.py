@@ -1,7 +1,6 @@
 # TODO 
-#    explicit predictor 
-#    nonzero initial guess
-#    quadliteral mesh
+#    nonzero initial guess (for iterative schemes)
+#    quadliteral/hexaeder mesh
 """
 2D Minimal model (of 1D Terzaghi), hydromechanical (HM), staggered scheme (stress-split)
 spatial FE discretization (plane strain) for both H and M (Taylor Hood)
@@ -20,10 +19,10 @@ model=mmp.MMP()
 # DECLARATION
 model=mmp.MMP()
 ZeroScalar = fe.Constant((0))	
-ZeroVector = fe.Constant((0,0))
+ZeroVector = fe.Constant((0,0,0))
 p_ref, _, _, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, Nci_max, RelTol_ci, betaFS = model.get_fem_parameters()
-Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
+Nx, dt, dt_prog, Nt, Nci_max, RelTol_ci, betaFS = model.get_fem_parameters()
+Length, Width, Height, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
@@ -44,11 +43,11 @@ def max_norm_delta(f1, f2):   # TODO RelTol in dimensional equations
 
 
 # MESH (simplex elements in 2D=triangles)
-mesh = fe.UnitSquareMesh(Nx, Ny)
+mesh = fe.UnitCubeMesh(Nx, Nx, Nx)
 #mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
 
 VH = fe.FunctionSpace(mesh, 'P', 1)
-VM = fe.VectorFunctionSpace(mesh, 'P', 2)   
+VM = fe.VectorFunctionSpace(mesh, 'P', 1)   
 Vsigma = fe.TensorFunctionSpace(mesh, "P", 1)     
 
 p = fe.Function(VH, name="fluidpressure")    # function solved for and written to file
@@ -65,7 +64,7 @@ pp = fe.Function(VH, name="predicted pressure")    # function solved for and wri
 p_0 = fe.Constant(p_ic)
 p_n = fe.interpolate(p_0, VH)   # fluid pressure at t=t_n
 p_ = fe.interpolate(p_0, VH)   # fluid pressure at t=t_(n+1) at coupling iterations
-u_0 =fe.Expression( ('0','0'), degree=2)    # undeformed
+u_0 =fe.Expression( ('0','0','0'), degree=2)    # undeformed
 u_n = fe.interpolate(u_0, VM)   # displacement at t=t_n
 
 #sv_0 = material.sv(p_n, u_n)    # derive from initial state
@@ -79,26 +78,27 @@ ev_ = fe.project(ev_0, VH)
 # DirichletBC, assign geometry via functions
 tol = 1E-14
 def top(x, on_boundary):    
-    return on_boundary and fe.near(x[1], Length, tol) 
+    return on_boundary and fe.near(x[2], Height, tol) 
 bcH = fe.DirichletBC(VH, p_bc, top)  # drainage on top 
 
 def bottom(x, on_boundary):    
-    return on_boundary and fe.near(x[1], 0.0, tol)   
+    return on_boundary and fe.near(x[2], 0.0, tol)   
 bcMfixed = fe.DirichletBC(VM, ZeroVector, bottom)   # fixed bottom
 
-def leftright(x, on_boundary):    
+def sides(x, on_boundary):    
     #return True
-    return on_boundary and (fe.near(x[0], 0.0, tol) or fe.near(x[0], Width, tol))
-bcMroller = fe.DirichletBC(VM.sub(0), ZeroScalar, leftright)   # rollers on side, i.e. fix only in x-direction
-bcM = [bcMfixed, bcMroller]
+    return on_boundary and ( fe.near(x[0], 0.0, tol) or fe.near(x[0], Length, tol) or fe.near(x[1], 0.0, tol) or fe.near(x[1], Width, tol) )
+bcMroller_x = fe.DirichletBC(VM.sub(0), ZeroScalar, sides)   # rollers on side, i.e. fix only in x-direction
+bcMroller_y = fe.DirichletBC(VM.sub(1), ZeroScalar, sides)   # rollers on side, i.e. fix only in y-direction
+bcM = [bcMfixed, bcMroller_x, bcMroller_y]
 
 # Neumann BC, assign geometry via subdomains to have ds accessible in variational problem
 boundaries = fe.MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 boundaries.set_all(0)
-topSD = fe.AutoSubDomain(lambda x: fe.near(x[1], Length, tol))
+topSD = fe.AutoSubDomain(lambda x: fe.near(x[2], Height, tol))
 topSD.mark(boundaries, 1)   # accessable via ds(1)
 ds = fe.ds(subdomain_data=boundaries)
-traction_topM = fe.Constant((0, -p_load))		
+traction_topM = fe.Constant((0, 0, -p_load))		
 
 
 # FEM SYSTEM
@@ -142,9 +142,9 @@ vtkfile_u << (u, t)
 #vtkfile_s_eff << (s_eff, t)
 vtkfile_s_total << (s_total, t)
 
-y_staggered=np.linspace(tol, Length-tol, Ny+1)
-p_staggered=np.zeros((Nt, Ny+1))
-points=[ ((1.0/2.0)*Width, y_) for y_ in y_staggered ]
+z_staggered=np.linspace(tol, Height-tol, Nx+1)
+p_staggered=np.zeros((Nt, Nx+1))
+points=[ ( 0.5*Length, 0.5*Width, z_) for z_ in z_staggered ]
 conv_monitor=np.zeros((Nt, Nci_max))
 for n in range(Nt):     # time steps
     t += dt
@@ -173,8 +173,8 @@ for n in range(Nt):     # time steps
     
     # predictor
     #p_.assign( fe.project(p + 0.0*dt_prog*(p-p_n), VH))    # linear extrapolation for p
-    #fe.solve(aP == LP, pp, bcH)
-    #p_.assign(pp)
+    #fe.solve(aP == LP, pp, bcH) # explicit..
+    #p_.assign(pp)               # ..predictor
     
     # shift forward time step
     p_n.assign(p)
@@ -196,5 +196,5 @@ for n in range(Nt):     # time steps
     vtkfile_s_total << (s_total, t)
 
 plt.show()
-np.savetxt("mini_y_staggered.txt", y_staggered)
+np.savetxt("mini_z_staggered.txt", z_staggered)
 np.savetxt("mini_p_staggered.txt", p_staggered)

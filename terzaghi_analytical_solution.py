@@ -56,29 +56,29 @@ def terzaghi_example():
 
 model=mmp.MMP()
 p_ref, E, nu, k, mu = model.get_physical_parameters()
-Nx, Ny, dt, dt_prog, Nt, _, _, _ = model.get_fem_parameters()
-Length, Width, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
+Nx, dt, dt_prog, Nt, _, _, _ = model.get_fem_parameters()
+Length, Width, Height, K, Lame1, Lame2, k_mu, cc = model.get_dependent_parameters()
 p_ic, p_bc, p_load = model.get_icbc() 
 
 N_Fourier=100
-y_ana = np.linspace(0, Length, 101)
+z_ana = np.linspace(0, Height, 101)
 
-y_mono=np.loadtxt("mini_y_mono.txt")
+z_mono=np.loadtxt("mini_z_mono.txt")
 p_mono=np.loadtxt("mini_p_mono.txt")
 
-y_staggered=np.loadtxt("mini_y_staggered.txt")
+z_staggered=np.loadtxt("mini_z_staggered.txt")
 p_staggered=np.loadtxt("mini_p_staggered.txt")
 
 t=0.0
 for n in range(Nt):     # time steps
     t += dt
     dt*=dt_prog
-    p_ana = dim_sol(y_ana, t-dt/2, N_Fourier, Length, cc, p_load-p_bc) + p_bc
+    p_ana = dim_sol(z_ana, t-dt/2, N_Fourier, Length, cc, p_load-p_bc) + p_bc
     color_code=[0.9*(1-(n+1)/Nt)]*3
     if Nt<21 or n % 10 == 1:
-        plt.plot(y_ana, p_ana,  color=color_code)    
-        plt.plot(y_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    
-        plt.plot(y_staggered, p_staggered[n,:],  color=color_code, linestyle='none', marker='x', markersize=6)    
+        plt.plot(z_ana, p_ana,  color=color_code)    
+        plt.plot(z_mono, p_mono[n,:],  color=color_code, linestyle='none', marker='o', markersize=6, markerfacecolor='none')    
+        plt.plot(z_staggered, p_staggered[n,:],  color=color_code, linestyle='none', marker='x', markersize=6)    
 
 plt.ylim(min(p_bc, p_load)-abs(p_ref)/10.0, max(p_bc, p_load)+abs(p_ref)/10.0)
 

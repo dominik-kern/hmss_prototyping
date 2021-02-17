@@ -9,7 +9,7 @@ Created on Mon Jan 25 13:48:53 2021
 
 import fenics as fe
 
-# Define strain and stress (2D plain strain)
+# Define strain and stress (skip third column/row in sigma for plain strain)
 class SAS:
     
     def __init__(self, Lame1, Lame2, K):
@@ -21,10 +21,10 @@ class SAS:
         return fe.sym(fe.grad(u))
 
     def sigma_eff(self, u):
-        return self.Lame1*fe.div(u)*fe.Identity(2) + 2*self.Lame2*self.epsilon(u)
+        return self.Lame1*fe.div(u)*fe.Identity(len(u)) + 2*self.Lame2*self.epsilon(u)
 
     def sigma(self, p, u):
-        return self.sigma_eff(u) - p * fe.Identity(2)
+        return self.sigma_eff(u) - p * fe.Identity(len(u))
 
     def sv(self, p, u):
         return self.K*fe.div(u) - p
