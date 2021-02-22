@@ -28,19 +28,19 @@ class MMP:
         self.Height = 1.0 # unit cube!
         self.Lame1 = self.E*self.nu/((1.0+self.nu)*(1-0-2.0*self.nu))
         self.Lame2 = self.E/(2.0*(1.0+self.nu)) 
-        self.K=self.Lame1 + (2.0/3.0)*self.Lame2  
+        self.K=self.Lame1 + (2.0/3.0)*self.Lame2   # ... + (2/dim)*Lame2
         self.k_mu = self.k/self.mu
         self.cc = self.E*self.k_mu # consolidation coefficient
         
     # FEM parameters    
-        self.Nx=4        # mesh divisions per edge (possibly xyz)
+        self.Nx=2        # mesh divisions per edge (possibly xyz)
         self.dt=0.1 # initial time step
         self.dt_prog=1.0 # time step progression
-        self.Nt=10   # number of time steps
+        self.Nt=3   # number of time steps
     # only for staggered
         self.Nci_max=100   # maximal number of coupling iterations
         self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
-        self.betaFS=1.0/(2.0*(self.Lame1 + (2.0/2.0)*self.Lame2)) 
+        self.betaFS=0.58/(2.0*self.K)    #   0 < K < infty
 
         
         
