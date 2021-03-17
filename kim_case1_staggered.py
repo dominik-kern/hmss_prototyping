@@ -19,7 +19,7 @@ model=kc1.KC1()
 ZeroScalar = fe.Constant((0))	
 ZeroVector = fe.Constant((0,0))
 p_ref,  E,  nu,  k,  mu,  rho_f,  tau,  beta_s,  phi=model.get_physical_parameters()
-Nx,  Ny,  dt,  dt_prog,  Nt,  Nci_max,  RelTol_ci, Kss=model.get_fem_parameters()
+Nx,  Ny,  dt,  dt_prog,  Nt,  Nci_max,  RelTol_ci, betaFS=model.get_fem_parameters()
 Length,  Width,  K,  Lame1,  Lame2,  k_mu,  cc,  alpha,  S, tc_DK, tc_TD=model.get_dependent_parameters()
 p_ic,  p_bc,  p_load=model.get_icbc()
 material=sas.SAS(Lame1, Lame2, K)  # stress and strain
@@ -50,7 +50,7 @@ u = fe.Function(VM, name="displacement") # function to solve for and written to 
 s_eff = fe.Function(Vsigma, name="effective_stress")
 s_total = fe.Function(Vsigma, name="total_stress")
 sv = fe.Function(VH, name="hydrostatic_totalstress")    # function solved for and written to file
-
+ev = fe.Function(VH, name="volumetric strain")    # function solved for and written to file
 
 # INITIAL CONDITIONS undeformed, at rest, constant pressure everywhere
 p_0 = fe.Constant(p_ic)
@@ -61,7 +61,9 @@ u_n = fe.interpolate(u_0, VM)   # displacement at t=t_n
 sv_0 = material.sv(p_n, u_n)    # derive from initial state
 sv_n = fe.project(sv_0, VH)  # hydrostatic total stress at t_n 
 sv_ = fe.project(sv_0, VH) # same as sv_n at t_(n+1) at coupling iterations (at first coupling iteration sv_=sv_n)
-
+ev_0 = fe.div(u_n)
+ev_n = fe.project(ev_0, VH)
+ev_ = fe.project(ev_0, VH) 
 
 # BOUNDARY CONDITIONS
 # DirichletBC, assign geometry via functions
@@ -93,12 +95,14 @@ traction_topM = fe.Constant((0, -p_load))
 
 # FEM SYSTEM
 # Define variational H problem a(v,p)=L(v)
+
+
 pH = fe.TrialFunction(VH)
 vH = fe.TestFunction(VH)
 
-aH = ( vH*alpha*pH/K + vH*S*pH + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH/2)) )*fe.dx
+aH = ( vH*( betaFS + S )*pH + dT*k_mu*fe.dot(fe.grad(vH), fe.grad(pH)) )*fe.dx
 
-LH = ( vH*alpha*(p_n/K-(sv_-sv_n)/K) + vH*S*p_n - dT*k_mu*fe.dot(fe.grad(vH), fe.grad(p_n/2)) )*fe.dx 
+LH = vH*( betaFS*p_ + S*p_n - alpha*(ev_-ev_n) )*fe.dx 
 # no non-zero Neumann BC, i.e. no prescribed in-outflows (only flow via DirichletBC possible)
 # no sources
 
@@ -138,10 +142,12 @@ for n in range(Nt):     # time steps
         p_.assign(p)    # shift forward coupling iteration
         
         fe.solve(aM == LM, u, bcM)
+        ev = fe.project( fe.div(u), VH )
         #s_eff.assign(fe.project(material.sigma_eff(u), Vsigma))    # effective stress
         sv.assign( fe.project( material.sv(p, u), VH) )    # hydrostatic total stress
         delta_sv=max_norm_delta(sv_, sv)
         sv_.assign(sv)   # shift forward coupling iteration
+        ev_.assign(ev) 
         
         #print(nn+1,'. ', delta_p, delta_sv)
         conv_criterium=np.abs(delta_p/p_ref) + np.abs(delta_sv/p_ref)  # take both to exclude random hit of one variable at initial state
@@ -151,6 +157,7 @@ for n in range(Nt):     # time steps
 
     sv_.assign(sv + dt_prog*(sv-sv_n))               # linear predictor
     sv_n.assign(sv)     # shift forward time step
+    ev_n.assign(ev)
     p_n.assign(p)       # shift forward time step
     s_total.assign(fe.project(material.sigma(p, u), Vsigma))
     dt*=dt_prog

@@ -42,7 +42,7 @@ def max_norm_delta(f1, f2):   # TODO RelTol in dimensional equations
     vertex_values_f2 = f2.compute_vertex_values(mesh)
     return np.max( np.abs(vertex_values_f1 - vertex_values_f2) )
 
-Nrefine=4
+Nrefine=1
 timingN=np.zeros(Nrefine)
 timingT=np.zeros(Nrefine)
 for nx in range(Nrefine):

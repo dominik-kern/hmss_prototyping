@@ -22,15 +22,11 @@ class KC1:
         self.phi = 0.3 # porosity
 
     # FEM parameters    
-        self.Nx=1        # mesh divisions x-direction
-        self.Ny=15       # mesh divisions y-direction
+        self.Nx=1        # mesh divisions x-direction (2)
+        self.Ny=5       # mesh divisions y-direction  (15)
         self.dt=400.0 # initial time step
         self.dt_prog=1.0 # time step progression
-        self.Nt=50   # number of time steps
-    # only for staggered
-        self.Nci_max=100   # maximal number of coupling iterations
-        self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
-        self.Kss=1.0   # ratio of bulk modulus in coupling term to real bulk modulus
+        self.Nt=5   # number of time steps
         
     # dependent parameters
         self.Length = 30 # Length (y)
@@ -47,6 +43,11 @@ class KC1:
         mv=1.0/(self.K+(4.0/3.0)*self.Lame2)   # P-wave modulus
         ccTD=self.k/( self.mu*(mv*self.alpha**2 + self.S) )
         self.tc_TD = (self.Length**2)/ccTD  # characteristic time (Tengfei Deng)
+        
+        # only for staggered
+        self.Nci_max=100   # maximal number of coupling iterations
+        self.RelTol_ci=1.0e-10   # relative tolerance of coupling iterations
+        self.betaFS=0.5*(self.alpha**2)/self.K  # optimal 0.7 * 0.5*(alpha**2)/K1.0   
     
     # initial and boundary conditions
         self.p_ic=1*self.p_ref
@@ -59,7 +60,7 @@ class KC1:
 
     def get_fem_parameters(self):
     # staggered and mono
-        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci, self.Kss]
+        return [self.Nx, self.Ny, self.dt, self.dt_prog, self.Nt, self.Nci_max, self.RelTol_ci, self.betaFS]
 
     def get_dependent_parameters(self):
         return [self.Length, self.Width, self.K, self.Lame1, self.Lame2, self.k_mu, self.cc, self.alpha, self.S, self.tc_DK, self.tc_TD]

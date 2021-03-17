@@ -30,17 +30,18 @@ material=sas.SAS(Lame1, Lame2, K)  # stress and strain
 dT=fe.Constant(dt) #  make time step mutable
 
 fe.set_log_level(30)  # control info/warning/error messages
-vtkfile_p = fe.File('mini_mono_pressure.pvd')
-vtkfile_u = fe.File('mini_mono_displacement.pvd')
-vtkfile_s_total = fe.File('mini_mono_totalstress.pvd')    # xdmf for multiple fields
+vtkfile_p = fe.File('results/mini_mono_pressure.pvd')
+vtkfile_u = fe.File('results/mini_mono_displacement.pvd')
+vtkfile_s_total = fe.File('results/mini_mono_totalstress.pvd')    # xdmf for multiple fields
 
-Nrefine=4
+Nrefine=1
 timingN=np.zeros(Nrefine)
 timingT=np.zeros(Nrefine)
 for nx in range(Nrefine):
     
     ## MESH (simplex elements in 2D=triangles) 
     mesh = fe.UnitCubeMesh(Nx, Nx, Nx)
+    fe.plot(mesh)
     #mesh = fe.RectangleMesh.create([fe.Point(0, 0), fe.Point(Width, Length)], [Nx,Ny], fe.CellType.Type.quadrilateral)
     
     Pp = fe.FiniteElement('P', fe.tetrahedron, 1)
@@ -137,7 +138,7 @@ for nx in range(Nrefine):
         p_mono[n, :] = np.array([ p_n(point) for point in points])
         
     #    p_, u_ = pu_.split()
-    #    vtkfile_p << (p_, t)
+    #     vtkfile_p << (p_, t)
     #    vtkfile_u << (u_, t)
     #    vtkfile_s_total << (sigma_, t)    
         dt*=dt_prog
